@@ -1,12 +1,39 @@
-import { useEffect, useState } from 'react';
-import { usePosts } from './context/PostsContext';
-import { createRandomPost } from './utils/createRandomPost';
-import { useSearchQuery } from './context/SearchQueryContext';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { faker } from '@faker-js/faker';
+
+export const PostsContext = createContext();
+
+function createRandomPost() {
+  return {
+    title: `${faker.hacker.adjective()} ${faker.hacker.noun()}`,
+    body: faker.hacker.phrase(),
+  };
+}
 
 function App() {
-  const [searchQuery, setSearchQuery] = useSearchQuery();
-  const { searchedPosts: posts, setPosts } = usePosts(searchQuery);
+  const [posts, setPosts] = useState(() =>
+    Array.from({ length: 30 }, () => createRandomPost()),
+  );
+  const [searchQuery, setSearchQuery] = useState('');
   const [isFakeDark, setIsFakeDark] = useState(false);
+
+  // Derived state. These are the posts that will actually be displayed
+  const searchedPosts =
+    searchQuery.length > 0
+      ? posts.filter((post) =>
+          `${post.title} ${post.body}`
+            .toLowerCase()
+            .includes(searchQuery.toLowerCase()),
+        )
+      : posts;
+
+  function handleAddPost(post) {
+    setPosts((posts) => [post, ...posts]);
+  }
+
+  function handleClearPosts() {
+    setPosts([]);
+  }
 
   // Whenever `isFakeDark` changes, we toggle the `fake-dark-mode` class on the HTML element (see in "Elements" dev tool).
   useEffect(
@@ -17,29 +44,43 @@ function App() {
   );
 
   return (
-    <section>
-      <button
-        onClick={() => setIsFakeDark((isFakeDark) => !isFakeDark)}
-        className="btn-fake-dark-mode"
-      >
-        {isFakeDark ? '☀️' : '🌙'}
-      </button>
+    <PostsContext.Provider
+      value={{
+        posts: searchedPosts,
+        searchQuery,
+        setSearchQuery,
+        onClearPosts: handleClearPosts,
+        onAddPost: handleAddPost,
+        isFakeDark,
+        setIsFakeDark,
+      }}
+    >
+      <section>
+        <DarkButton />
+        <Header />
+        <Main />
+        <Archive />
+        <Footer />
+      </section>
+    </PostsContext.Provider>
+  );
+}
 
-      <Header />
-      <Main />
-      <Archive />
-      <Footer />
-    </section>
+function DarkButton() {
+  const { isFakeDark, setIsFakeDark } = useContext(PostsContext);
+  return (
+    <button
+      onClick={() => setIsFakeDark((isFakeDark) => !isFakeDark)}
+      className="btn-fake-dark-mode"
+    >
+      {isFakeDark ? '☀️' : '🌙'}
+    </button>
   );
 }
 
 function Header() {
-  const [searchQuery, setSearchQuery] = useSearchQuery();
-  const { searchedPosts: posts, setPosts } = usePosts(searchQuery);
+  const { onClearPosts } = useContext(PostsContext);
 
-  function handleClearPosts() {
-    setPosts([]);
-  }
   return (
     <header>
       <h1>
@@ -48,14 +89,19 @@ function Header() {
       <div>
         <Results />
         <SearchPosts />
-        <button onClick={handleClearPosts}>Clear posts</button>
+        <ClearPostsButton />
       </div>
     </header>
   );
 }
 
+function ClearPostsButton() {
+  const { onClearPosts } = useContext(PostsContext);
+  return <button onClick={onClearPosts}>Clear posts</button>;
+}
+
 function SearchPosts() {
-  const [searchQuery, setSearchQuery] = useSearchQuery();
+  const { searchQuery, setSearchQuery } = useContext(PostsContext);
 
   return (
     <input
@@ -67,9 +113,7 @@ function SearchPosts() {
 }
 
 function Results() {
-  const [searchQuery, setSearchQuery] = useSearchQuery();
-  const { searchedPosts: posts, setPosts } = usePosts(searchQuery);
-
+  const { posts } = useContext(PostsContext);
   return <p>🚀 {posts.length} atomic posts found</p>;
 }
 
@@ -91,16 +135,15 @@ function Posts() {
 }
 
 function FormAddPost() {
-  const [searchQuery, setSearchQuery] = useSearchQuery();
-  const { searchedPosts: posts, setPosts } = usePosts(searchQuery);
-
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+
+  const { onAddPost } = useContext(PostsContext);
 
   const handleSubmit = function (e) {
     e.preventDefault();
     if (!body || !title) return;
-    setPosts([{ title, body }, ...posts]);
+    onAddPost({ title, body });
     setTitle('');
     setBody('');
   };
@@ -123,9 +166,7 @@ function FormAddPost() {
 }
 
 function List() {
-  const [searchQuery, setSearchQuery] = useSearchQuery();
-  const { searchedPosts: posts, setPosts } = usePosts(searchQuery);
-
+  const { posts } = useContext(PostsContext);
   return (
     <ul>
       {posts.map((post, i) => (
@@ -139,20 +180,14 @@ function List() {
 }
 
 function Archive() {
-  const [searchQuery, setSearchQuery] = useSearchQuery();
-  const { searchedPosts, setPosts } = usePosts(searchQuery);
-
+  const { onAddPost } = useContext(PostsContext);
   // Here we don't need the setter function. We're only using state to store these posts because the callback function passed into useState (which generates the posts) is only called once, on the initial render. So we use this trick as an optimization technique, because if we just used a regular variable, these posts would be re-created on every render. We could also move the posts outside the components, but I wanted to show you this trick 😉
-  const [archivedPosts] = useState(() =>
+  const [posts] = useState(() =>
     // 💥 WARNING: This might make your computer slow! Try a smaller `length` first
     Array.from({ length: 10000 }, () => createRandomPost()),
   );
 
   const [showArchive, setShowArchive] = useState(false);
-
-  function handleAddPost(post) {
-    setPosts((posts) => [post, ...posts]);
-  }
 
   return (
     <aside>
@@ -163,14 +198,12 @@ function Archive() {
 
       {showArchive && (
         <ul>
-          {archivedPosts.map((post, i) => (
+          {posts.map((post, i) => (
             <li key={i}>
               <p>
                 <strong>{post.title}:</strong> {post.body}
               </p>
-              <button onClick={() => handleAddPost(post)}>
-                Add as new post
-              </button>
+              <button onClick={() => onAddPost(post)}>Add as new post</button>
             </li>
           ))}
         </ul>
